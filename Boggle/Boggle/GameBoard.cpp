@@ -19,6 +19,14 @@ GameBoard::~GameBoard()
 {
 }
 
+struct compareStrByLength 
+{
+	bool operator()(const std::string &first, const std::string &second) 
+	{
+		return first.size() < second.size();
+	}
+};
+
 void GameBoard::ShowDice()
 {
 	for (int y = 0; y < boardSize; y++)
@@ -77,6 +85,8 @@ void GameBoard::Solve()
 		}
 	}
 
+	compareStrByLength comparator;
+	std::sort(results.begin(), results.end(), comparator);
 	PrintResultsAndScores(results);
 }
 
