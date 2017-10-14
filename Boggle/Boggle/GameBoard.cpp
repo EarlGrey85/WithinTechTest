@@ -33,19 +33,12 @@ void GameBoard::ShowDice()
 	}
 }
 
-void GameBoard::Traverse(const int &x, const int &y, std::string possibleWord, std::vector< std::vector<bool> > &visitedNodes, std::vector< std::string > &results)
+void GameBoard::Traverse(const int &x, const int &y, std::string possibleWord, std::vector< std::string > &results)
 {
 	if (x < 0 || x >= boardSize || y < 0 || y >= boardSize)
 	{
 		return;
 	}
-
-	if (visitedNodes[x][y] == true)
-	{
-		return;
-	}
-
-	visitedNodes[x][y] = true;
 	
 	possibleWord += dice[x][y];
 
@@ -54,14 +47,14 @@ void GameBoard::Traverse(const int &x, const int &y, std::string possibleWord, s
 		return;
 	}
 
-	Traverse(x, y + 1, possibleWord, visitedNodes, results);
-	Traverse(x - 1, y + 1, possibleWord, visitedNodes, results);
-	Traverse(x - 1, y, possibleWord, visitedNodes, results);
-	Traverse(x - 1, y - 1, possibleWord, visitedNodes, results);
-	Traverse(x, y - 1, possibleWord, visitedNodes, results);
-	Traverse(x + 1, y - 1, possibleWord, visitedNodes, results);
-	Traverse(x + 1, y, possibleWord, visitedNodes, results);
-	Traverse(x + 1, y + 1, possibleWord, visitedNodes, results);
+	Traverse(x, y + 1, possibleWord, results);
+	Traverse(x - 1, y + 1, possibleWord, results);
+	Traverse(x - 1, y, possibleWord, results);
+	Traverse(x - 1, y - 1, possibleWord, results);
+	Traverse(x, y - 1, possibleWord, results);
+	Traverse(x + 1, y - 1, possibleWord, results);
+	Traverse(x + 1, y, possibleWord, results);
+	Traverse(x + 1, y + 1, possibleWord, results);
 
 	auto it = std::find(results.begin(), results.end(), possibleWord);
 	
@@ -79,26 +72,39 @@ void GameBoard::Solve()
 	{
 		for (int x = 0; x < boardSize; x++)
 		{
-			std::vector< std::vector<bool> > visitedNodes(boardSize, std::vector<bool>(boardSize, false));
 			std::string possibleWord;
-			Traverse(x, y, possibleWord, visitedNodes, results);
+			Traverse(x, y, possibleWord, results);
 		}
 	}
 
 	PrintResultsAndScores(results);
 }
 
+static inline std::string GetIndent(const std::string &s, const int &longestWordLength)
+{
+	auto numSpaces = longestWordLength + 5 - s.length();
+	std::string indent;
+
+	for (int i = 0; i < numSpaces; i++)
+	{
+		indent += ' ';
+	}
+
+	return indent;
+}
+
 void GameBoard::PrintResultsAndScores(std::vector< std::string > &results)
 {
 	int overallScore = 0;
 	int score = 0;
+
 	std::cout << "\n\n************************************\nResults:" << std::endl;
 
 	for each (auto result in results)
 	{
 		score = GetWordScore(result);
 		overallScore += score;
-		std::cout << result << "\t" << score << std::endl;
+		std::cout << result << GetIndent(result, longestWordLength) << score << std::endl;
 	}
 
 	std::cout << "____________________________________" << std::endl;
@@ -233,6 +239,12 @@ void GameBoard::PrewarmWordPartsSet()
 	for each (auto word in words)
 	{
 		std::string wordPart;
+		auto len = word.length();
+
+		if (len > longestWordLength)
+		{
+			longestWordLength = len;
+		}
 
 		for each (auto letter in word)
 		{
@@ -240,13 +252,6 @@ void GameBoard::PrewarmWordPartsSet()
 
 			if (wordParts.find(wordPart) == wordParts.end())
 			{
-				auto l = wordPart.length();
-
-				if (l > longestWordLength)
-				{
-					longestWordLength = l;
-				}
-
 				wordParts.insert(wordPart);
 			}
 		}
