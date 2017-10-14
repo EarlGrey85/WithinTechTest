@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <thread>
+#include <deque>
 
 GameBoard::GameBoard()
 {
@@ -14,18 +16,9 @@ GameBoard::GameBoard()
 	PrewarmWordPartsSet();
 }
 
-
 GameBoard::~GameBoard()
 {
 }
-
-struct compareStrByLength 
-{
-	bool operator()(const std::string &first, const std::string &second) 
-	{
-		return first.size() < second.size();
-	}
-};
 
 void GameBoard::ShowDice()
 {
@@ -41,13 +34,15 @@ void GameBoard::ShowDice()
 	}
 }
 
-void GameBoard::Traverse(const int &x, const int &y, std::string possibleWord, std::vector< std::string > &results)
+void GameBoard::Traverse(const int &x, const int &y, std::vector< std::vector<bool> > curWordNodes, std::string possibleWord, std::vector< std::string > &results)
 {
-	if (x < 0 || x >= boardSize || y < 0 || y >= boardSize)
+	if (x < 0 || x >= boardSize || y < 0 || y >= boardSize || curWordNodes[x][y])
 	{
 		return;
 	}
-	
+
+	curWordNodes[x][y] = true;
+
 	possibleWord += dice[x][y];
 
 	if (possibleWord.length() > longestWordLength || wordParts.find(possibleWord) == wordParts.end())
@@ -55,37 +50,66 @@ void GameBoard::Traverse(const int &x, const int &y, std::string possibleWord, s
 		return;
 	}
 
-	Traverse(x, y + 1, possibleWord, results);
-	Traverse(x - 1, y + 1, possibleWord, results);
-	Traverse(x - 1, y, possibleWord, results);
-	Traverse(x - 1, y - 1, possibleWord, results);
-	Traverse(x, y - 1, possibleWord, results);
-	Traverse(x + 1, y - 1, possibleWord, results);
-	Traverse(x + 1, y, possibleWord, results);
-	Traverse(x + 1, y + 1, possibleWord, results);
+	Traverse(x, y + 1, curWordNodes, possibleWord, results);
+	Traverse(x - 1, y + 1, curWordNodes, possibleWord, results);
+	Traverse(x - 1, y, curWordNodes, possibleWord, results);
+	Traverse(x - 1, y - 1, curWordNodes, possibleWord, results);
+	Traverse(x, y - 1, curWordNodes, possibleWord, results);
+	Traverse(x + 1, y - 1, curWordNodes, possibleWord, results);
+	Traverse(x + 1, y, curWordNodes, possibleWord, results);
+	Traverse(x + 1, y + 1, curWordNodes, possibleWord, results);
 
+	m.lock();
 	auto it = std::find(results.begin(), results.end(), possibleWord);
 	
 	if (it == results.end() && possibleWord.length() >= 3 && words.find(possibleWord) != words.end())
 	{
 		results.push_back(possibleWord);
 	}
+	m.unlock();
+}
+
+void GameBoard::Exec(std::deque< std::function<void()> > &jobs)
+{
+	while (!jobs.empty())
+	{
+		jobs.front()();
+		jobs.pop_front();
+	}
 }
 
 void GameBoard::Solve()
 {
+	std::vector<std::thread> workers;
+	int processorCount = std::thread::hardware_concurrency();
 	std::vector< std::string > results;
+	std::vector<std::deque<std::function<void()>>> threadJobPools(processorCount);
+	
 
 	for (int y = 0; y < boardSize; y++)
 	{
 		for (int x = 0; x < boardSize; x++)
 		{
 			std::string possibleWord;
-			Traverse(x, y, possibleWord, results);
+			std::vector< std::vector<bool> > curWordNodes(boardSize, std::vector<bool>(boardSize, false));
+			threadJobPools[x % processorCount].push_front(std::bind(&GameBoard::Traverse, this, x, y, curWordNodes, possibleWord, std::ref(results)));
 		}
 	}
 
-	compareStrByLength comparator;
+	for (auto &pool : threadJobPools)
+	{
+		if (!pool.empty())
+		{
+			workers.push_back(std::thread(&GameBoard::Exec, this, std::ref(pool)));
+		}
+	}
+
+	for (auto &w : workers)
+	{
+		w.join();
+	}
+
+	CompareStrByLength comparator;
 	std::sort(results.begin(), results.end(), comparator);
 	PrintResultsAndScores(results);
 }
