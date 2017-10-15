@@ -73,14 +73,14 @@ void GameBoard::Traverse(const int &x, const int &y, std::unordered_set<std::str
 	Traverse(x + 1, y, curWordVisitedNodes, possibleWord, results);
 	Traverse(x + 1, y + 1, curWordVisitedNodes, possibleWord, results);
 
-	m.lock();
+	traverseMutex.lock();
 	auto it = std::find(results.begin(), results.end(), possibleWord);
 	
 	if (it == results.end() && possibleWord.length() >= 3 && words.find(possibleWord) != words.end())
 	{
 		results.push_back(possibleWord);
 	}
-	m.unlock();
+	traverseMutex.unlock();
 }
 
 void GameBoard::Exec(std::deque< std::function<void()> > &jobs)

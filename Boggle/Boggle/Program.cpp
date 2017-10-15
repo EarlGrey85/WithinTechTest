@@ -3,9 +3,24 @@
 #include <ctime>
 #include "GameBoard.h"
 #include <chrono>
+#include <windows.h>
+
+static inline void PrepareConsole()
+{
+	CONSOLE_FONT_INFOEX cfi;
+	cfi.cbSize = sizeof(cfi);
+	cfi.nFont = 0;
+	cfi.dwFontSize.X = 0;                   
+	cfi.dwFontSize.Y = 14;                  
+	cfi.FontFamily = FF_DONTCARE;
+	cfi.FontWeight = FW_NORMAL;
+	auto handle = GetStdHandle(STD_OUTPUT_HANDLE);
+	SetCurrentConsoleFontEx(handle, FALSE, &cfi);
+}
 
 int main()
 {
+	PrepareConsole();
 	GameBoard gameBoard;
 
 	while (true)

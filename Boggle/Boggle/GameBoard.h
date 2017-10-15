@@ -22,7 +22,7 @@ class GameBoard
 	std::string const wordListFilePath = "wordsList.txt";
 	std::vector< std::vector<char> > dice;
 	int boardSize = 4;
-	std::recursive_mutex m;
+	std::recursive_mutex traverseMutex;
 
 public:
 	GameBoard();
