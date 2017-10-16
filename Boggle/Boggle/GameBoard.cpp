@@ -106,7 +106,7 @@ void GameBoard::Solve()
 		{
 			std::string possibleWord;
 			std::unordered_set<std::string> curWordVisitedNodes;
-			threadJobPools[x % processorCount].push_front(std::bind(&GameBoard::Traverse, this, x, y, curWordVisitedNodes, possibleWord, std::ref(results)));
+			threadJobPools[(boardSize * y + x) % processorCount].push_front(std::bind(&GameBoard::Traverse, this, x, y, curWordVisitedNodes, possibleWord, std::ref(results)));
 		}
 	}
 
