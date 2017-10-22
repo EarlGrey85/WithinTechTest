@@ -1,13 +1,38 @@
 #include "GameBoard.h"
-#include <iostream>
-#include <ctime>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <thread>
-#include <deque>
+
+static inline int GetRandomIntWithinRange(const int &min, const int &max)
+{
+	return rand() % max + min;
+}
+
+static inline bool CheckIfVisitedForCurrentWord(const int &x, const int &y, std::unordered_set<std::string> &curWordVisitedNodes)
+{
+	std::stringstream ss;
+	ss << x << y;
+	std::string strCoord = ss.str();
+
+	if (curWordVisitedNodes.find(strCoord) != curWordVisitedNodes.end())
+	{
+		return true;
+	}
+
+	curWordVisitedNodes.insert(strCoord);
+
+	return false;
+}
+
+static inline std::string GetIndent(const std::string &s, const int &longestWordLength)
+{
+	auto numSpaces = longestWordLength + 5 - s.length();
+	std::string indent;
+
+	for (int i = 0; i < numSpaces; i++)
+	{
+		indent += ' ';
+	}
+
+	return indent;
+}
 
 GameBoard::GameBoard()
 {
@@ -32,22 +57,6 @@ void GameBoard::ShowDice()
 		}
 		std::cout << std::endl;
 	}
-}
-
-static inline bool CheckIfVisitedForCurrentWord(const int &x, const int &y, std::unordered_set<std::string> &curWordVisitedNodes)
-{
-	std::stringstream ss;
-	ss << x << y;
-	std::string strCoord = ss.str();
-
-	if (curWordVisitedNodes.find(strCoord) != curWordVisitedNodes.end())
-	{
-		return true;
-	}
-
-	curWordVisitedNodes.insert(strCoord);
-
-	return false;
 }
 
 void GameBoard::Traverse(const int &x, const int &y, std::unordered_set<std::string> curWordVisitedNodes, std::string possibleWord, std::vector< std::string > &results)
@@ -98,7 +107,7 @@ void GameBoard::Solve()
 	int processorCount = std::thread::hardware_concurrency();
 	std::vector< std::string > results;
 	std::vector<std::deque<std::function<void()>>> threadJobPools(processorCount);
-	
+
 
 	for (int y = 0; y < boardSize; y++)
 	{
@@ -128,19 +137,6 @@ void GameBoard::Solve()
 	PrintResultsAndScores(results);
 }
 
-static inline std::string GetIndent(const std::string &s, const int &longestWordLength)
-{
-	auto numSpaces = longestWordLength + 5 - s.length();
-	std::string indent;
-
-	for (int i = 0; i < numSpaces; i++)
-	{
-		indent += ' ';
-	}
-
-	return indent;
-}
-
 void GameBoard::PrintResultsAndScores(std::vector< std::string > &results)
 {
 	int overallScore = 0;
@@ -150,7 +146,7 @@ void GameBoard::PrintResultsAndScores(std::vector< std::string > &results)
 
 	for each (auto result in results)
 	{
-		score = GetWordScore(result);
+		score = GetWordsScore(result);
 		overallScore += score;
 		std::cout << result << GetIndent(result, longestWordLength) << score << std::endl;
 	}
@@ -160,7 +156,7 @@ void GameBoard::PrintResultsAndScores(std::vector< std::string > &results)
 	std::cout << "************************************" << std::endl;
 }
 
-int GameBoard::GetWordScore(std::string &word)
+int GameBoard::GetWordsScore(std::string &word)
 {
 	int wordLength = word.length();
 
@@ -275,11 +271,6 @@ void GameBoard::ShuffleDice()
 		auto ch2 = &dice[rand() % dice.size()][rand() % dice[0].size()];
 		SwapChars(*ch1, *ch2);
 	}
-}
-
-int GameBoard::GetRandomIntWithinRange(const int &min, const int &max)
-{
-	return rand() % max + min;
 }
 
 void GameBoard::PrewarmWordPartsSet()
