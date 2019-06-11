@@ -31,8 +31,8 @@ int main()
 		std::cin >> boardSize;
 		printf("\n");
 		
-		gameBoard.GenerateDice(boardSize);
-		gameBoard.ShowDice();
+		gameBoard.Generate(boardSize);
+		gameBoard.Show();
 
 		std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
 

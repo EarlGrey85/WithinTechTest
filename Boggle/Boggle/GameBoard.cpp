@@ -1,51 +1,33 @@
 #include "GameBoard.h"
 
-static inline int GetRandomIntWithinRange(const int &min, const int &max)
+static int GetRandomIntWithinRange(const int &min, const int &max)
 {
 	return rand() % max + min;
 }
 
-static inline bool CheckIfVisitedForCurrentWord(const int &x, const int &y, std::unordered_set<std::string> &curWordVisitedNodes)
+static std::string GetIndent(const std::string &s, const int &longestWordLength)
 {
-	std::stringstream ss;
-	ss << x << y;
-	std::string strCoord = ss.str();
+    auto numSpaces = longestWordLength + 5 - s.length();
+    std::stringstream ss;
 
-	if (curWordVisitedNodes.find(strCoord) != curWordVisitedNodes.end())
-	{
-		return true;
-	}
+    for (int i = 0; i < numSpaces; i++)
+    {
+        ss << ' ';
+    }
 
-	curWordVisitedNodes.insert(strCoord);
-
-	return false;
-}
-
-static inline std::string GetIndent(const std::string &s, const int &longestWordLength)
-{
-	auto numSpaces = longestWordLength + 5 - s.length();
-	std::string indent;
-
-	for (int i = 0; i < numSpaces; i++)
-	{
-		indent += ' ';
-	}
-
-	return indent;
+    return ss.str();
 }
 
 GameBoard::GameBoard()
 {
 	srand(time(NULL));
 	ReadWordListFile(wordListFilePath);
-	PrewarmWordPartsSet();
 }
 
 GameBoard::~GameBoard()
-{
-}
+= default;
 
-void GameBoard::ShowDice()
+void GameBoard::Show()
 {
 	for (int y = 0; y < boardSize; y++)
 	{
@@ -53,43 +35,51 @@ void GameBoard::ShowDice()
 
 		for (int x = 0; x < boardSize; x++)
 		{
-			std::cout << dice[y][x] << "|";
+			std::cout << grid[y][x] << "|";
 		}
 		std::cout << std::endl;
 	}
 }
 
-void GameBoard::Traverse(const int &x, const int &y, std::unordered_set<std::string> curWordVisitedNodes, std::string possibleWord, std::vector< std::string > &results)
+void GameBoard::Traverse(const int &x, const int &y, std::unordered_set<Coord> visited, std::string possibleWord, std::unordered_set< std::string > &results)
 {
-	if (x < 0 || x >= boardSize || y < 0 || y >= boardSize || CheckIfVisitedForCurrentWord(x, y, curWordVisitedNodes))
+	if (x < 0 || x >= boardSize || y < 0 || y >= boardSize)
 	{
 		return;
 	}
 
-	possibleWord += dice[x][y];
+    auto currentPos = Coord(x, y);
 
-	if (possibleWord.length() > longestWordLength || wordParts.find(possibleWord) == wordParts.end())
+    if(visited.find(currentPos) != visited.end())
+    {
+        return;
+    }
+
+    visited.insert(currentPos);
+    possibleWord += grid[y][x];
+
+	if (wordParts.find(possibleWord) == wordParts.end())
 	{
 		return;
 	}
 
-	Traverse(x, y + 1, curWordVisitedNodes, possibleWord, results);
-	Traverse(x - 1, y + 1, curWordVisitedNodes, possibleWord, results);
-	Traverse(x - 1, y, curWordVisitedNodes, possibleWord, results);
-	Traverse(x - 1, y - 1, curWordVisitedNodes, possibleWord, results);
-	Traverse(x, y - 1, curWordVisitedNodes, possibleWord, results);
-	Traverse(x + 1, y - 1, curWordVisitedNodes, possibleWord, results);
-	Traverse(x + 1, y, curWordVisitedNodes, possibleWord, results);
-	Traverse(x + 1, y + 1, curWordVisitedNodes, possibleWord, results);
+    traverseMutex.lock();
 
-	traverseMutex.lock();
-	auto it = std::find(results.begin(), results.end(), possibleWord);
-	
-	if (it == results.end() && possibleWord.length() >= 3 && words.find(possibleWord) != words.end())
-	{
-		results.push_back(possibleWord);
-	}
-	traverseMutex.unlock();
+    if (possibleWord.length() >= 3 && words.find(possibleWord) != words.end())
+    {
+        results.insert(possibleWord);
+    }
+
+    traverseMutex.unlock();
+
+	Traverse(x, y + 1, visited, possibleWord, results);
+	Traverse(x - 1, y + 1, visited, possibleWord, results);
+	Traverse(x - 1, y, visited, possibleWord, results);
+	Traverse(x - 1, y - 1, visited, possibleWord, results);
+	Traverse(x, y - 1, visited, possibleWord, results);
+	Traverse(x + 1, y - 1, visited, possibleWord, results);
+	Traverse(x + 1, y, visited, possibleWord, results);
+	Traverse(x + 1, y + 1, visited, possibleWord, results);
 }
 
 void GameBoard::Exec(std::deque< std::function<void()> > &jobs)
@@ -105,7 +95,7 @@ void GameBoard::Solve()
 {
 	std::vector<std::thread> workers;
 	int processorCount = std::thread::hardware_concurrency();
-	std::vector< std::string > results;
+	std::unordered_set< std::string > results;
 	std::vector<std::deque<std::function<void()>>> threadJobPools(processorCount);
 
 
@@ -114,8 +104,8 @@ void GameBoard::Solve()
 		for (int x = 0; x < boardSize; x++)
 		{
 			std::string possibleWord;
-			std::unordered_set<std::string> curWordVisitedNodes;
-			threadJobPools[(boardSize * y + x) % processorCount].push_front(std::bind(&GameBoard::Traverse, this, x, y, curWordVisitedNodes, possibleWord, std::ref(results)));
+            std::unordered_set<Coord> visited;
+			threadJobPools[(boardSize * y + x) % processorCount].emplace_back(std::bind(&GameBoard::Traverse, this, x, y, visited, possibleWord, std::ref(results)));
 		}
 	}
 
@@ -123,7 +113,7 @@ void GameBoard::Solve()
 	{
 		if (!pool.empty())
 		{
-			workers.push_back(std::thread(&GameBoard::Exec, this, std::ref(pool)));
+			workers.emplace_back(&GameBoard::Exec, this, std::ref(pool));
 		}
 	}
 
@@ -132,12 +122,10 @@ void GameBoard::Solve()
 		w.join();
 	}
 
-	CompareStrByLength comparator;
-	std::sort(results.begin(), results.end(), comparator);
 	PrintResultsAndScores(results);
 }
 
-void GameBoard::PrintResultsAndScores(std::vector< std::string > &results)
+void GameBoard::PrintResultsAndScores(std::unordered_set< std::string > &results)
 {
 	int overallScore = 0;
 	int score = 0;
@@ -189,11 +177,26 @@ int GameBoard::GetWordsScore(std::string &word)
 void GameBoard::ReadWordListFile(const std::string &wordListFilePath)
 {
  	std::ifstream file(wordListFilePath);
-	std::string line;
+	std::string word;
+    std::stringstream ss;
 
-	while (std::getline(file, line))
+	while (std::getline(file, word))
 	{	
-		words.insert(line);
+		words.insert(word);
+
+        ss.str(std::string());
+        auto len = word.length();
+
+        if (len > longestWordLength)
+        {
+            longestWordLength = len;
+        }
+
+        for each (auto letter in word)
+        {
+            ss << letter;
+            wordParts.insert(ss.str());
+        }
 	}
 }
 
@@ -209,90 +212,20 @@ int GameBoard::CountGivenLetterIn2dVector(const char &letter, const std::vector<
 	return quantity;
 }
 
-void GameBoard::GenerateDice(const int &boardSize)
+void GameBoard::Generate(const int &boardSize)
 {
-	dice.clear();
+	grid.clear();
 	this->boardSize = boardSize;
-	std::vector<char> tempVector;
-	int lettersCount = 0;
-	int goalLettersQuantity = boardSize * boardSize;
-	int passed = 0;
+    std::vector<char> tempVector;
+	
+    for (int y = 0; y < boardSize; y++)
+    {
+        for (int x = 0; x < boardSize; x++)
+        {
+            tempVector.push_back(static_cast<char>('a' + GetRandomIntWithinRange(0, 26)));
+        }
 
-	while (lettersCount < goalLettersQuantity)
-	{
-		auto iterator = words.begin();
-		std::advance(iterator, GetRandomIntWithinRange(0, words.size()));
-		auto word = *iterator;
-
-		for (int i = 0; i < word.length(); i++)
-		{
-			if (lettersCount >= goalLettersQuantity)
-			{
-				break;
-			}
-
-			auto curQuantityCurLetter = CountGivenLetterIn2dVector(word[i], dice);
-			auto goalQuantityCurLetter = std::count(word.begin(), word.end(), word[i]); 
-
-			if (curQuantityCurLetter == 0 || passed < 20 ||
-				(curQuantityCurLetter > 0 && curQuantityCurLetter < goalQuantityCurLetter)) // since 20 letters didnt added then add all letters in given words
-			{
-				tempVector.push_back(word[i]);
-				lettersCount++;
-			}
-			else
-			{
-				passed++;
-			}
-
-			if (tempVector.size() == boardSize)
-			{
-				dice.push_back(tempVector);
-				tempVector.clear();
-			}
-		}
-	}
-		
-	ShuffleDice();
-}
-
-void SwapChars(char &ch1, char &ch2)
-{
-	auto temp = ch2;
-	ch2 = ch1;
-	ch1 = temp;
-}
-
-void GameBoard::ShuffleDice()
-{
-	for (int i = 0; i < boardSize * boardSize; i++)
-	{
-		auto ch1 = &dice[rand() % dice.size()][rand() % dice[0].size()];
-		auto ch2 = &dice[rand() % dice.size()][rand() % dice[0].size()];
-		SwapChars(*ch1, *ch2);
-	}
-}
-
-void GameBoard::PrewarmWordPartsSet()
-{
-	for each (auto word in words)
-	{
-		std::string wordPart;
-		auto len = word.length();
-
-		if (len > longestWordLength)
-		{
-			longestWordLength = len;
-		}
-
-		for each (auto letter in word)
-		{
-			wordPart += letter;
-
-			if (wordParts.find(wordPart) == wordParts.end())
-			{
-				wordParts.insert(wordPart);
-			}
-		}
-	}
+        grid.push_back(tempVector);
+        tempVector.clear();
+    }
 }
