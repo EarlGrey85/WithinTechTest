@@ -200,18 +200,6 @@ void GameBoard::ReadWordListFile(const std::string &wordListFilePath)
 	}
 }
 
-int GameBoard::CountGivenLetterIn2dVector(const char &letter, const std::vector< std::vector<char> > &vec)
-{
-	int quantity = 0;
-
-	for each (auto row in vec)
-	{
-		quantity += std::count(row.begin(), row.end(), letter);
-	}
-
-	return quantity;
-}
-
 void GameBoard::Generate(const int &boardSize)
 {
 	grid.clear();
