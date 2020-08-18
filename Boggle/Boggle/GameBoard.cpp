@@ -1,4 +1,11 @@
 #include "GameBoard.h"
+#include <unordered_map>
+#include <functional>
+#include <ctime>
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <windows.h>
 
 static int GetRandomIntWithinRange(const int &min, const int &max)
 {
@@ -7,15 +14,15 @@ static int GetRandomIntWithinRange(const int &min, const int &max)
 
 static std::string GetIndent(const std::string &s, const int &longestWordLength)
 {
-    auto numSpaces = longestWordLength + 5 - s.length();
-    std::stringstream ss;
+	auto numSpaces = longestWordLength + 5 - s.length();
+	std::stringstream ss;
 
-    for (int i = 0; i < numSpaces; i++)
-    {
-        ss << ' ';
-    }
+	for (int i = 0; i < numSpaces; i++)
+	{
+		ss << ' ';
+	}
 
-    return ss.str();
+	return ss.str();
 }
 
 GameBoard::GameBoard()
@@ -25,10 +32,31 @@ GameBoard::GameBoard()
 }
 
 GameBoard::~GameBoard()
-= default;
-
-void GameBoard::Show()
 {
+	CleanGrid();
+}
+
+void GameBoard::CleanGrid()
+{
+	for (int i = 0; i < boardSize; ++i)
+	{
+		delete[] grid[i];
+	}
+
+	delete[] grid;
+}
+
+void GameBoard::Show() const
+{
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+
+	if (boardSize > csbi.srWindow.Right / 2)
+	{
+		std::cout << "board is too wide to be shown" << std::endl;
+		return;
+	}
+
 	for (int y = 0; y < boardSize; y++)
 	{
 		std::cout << "|";
@@ -41,179 +69,159 @@ void GameBoard::Show()
 	}
 }
 
-void GameBoard::Traverse(const int &x, const int &y, std::unordered_set<Coord> visited, std::string possibleWord, std::unordered_set< std::string > &results)
+void GameBoard::Traverse(const int &x, const int &y, std::unordered_set<Coord> visited, PrefixTreeNode *possibleWordNode, std::unordered_set< std::string > &results)
 {
 	if (x < 0 || x >= boardSize || y < 0 || y >= boardSize)
 	{
 		return;
 	}
 
-    auto currentPos = Coord(x, y);
+	auto currentPos = Coord(x, y);
 
-    if(visited.find(currentPos) != visited.end())
-    {
-        return;
-    }
-
-    visited.insert(currentPos);
-    possibleWord += grid[y][x];
-
-	if (wordParts.find(possibleWord) == wordParts.end())
+	if (visited.find(currentPos) != visited.end() || possibleWordNode->children == nullptr)
 	{
 		return;
 	}
 
-    traverseMutex.lock();
+	possibleWordNode = possibleWordNode->children[grid[y][x] - 'a'];
 
-    if (possibleWord.length() >= 3 && words.find(possibleWord) != words.end())
-    {
-        results.insert(possibleWord);
-    }
+	if (possibleWordNode == nullptr)
+	{
+		return;
+	}
 
-    traverseMutex.unlock();
+	traverseMutex.lock();
 
-	Traverse(x, y + 1, visited, possibleWord, results);
-	Traverse(x - 1, y + 1, visited, possibleWord, results);
-	Traverse(x - 1, y, visited, possibleWord, results);
-	Traverse(x - 1, y - 1, visited, possibleWord, results);
-	Traverse(x, y - 1, visited, possibleWord, results);
-	Traverse(x + 1, y - 1, visited, possibleWord, results);
-	Traverse(x + 1, y, visited, possibleWord, results);
-	Traverse(x + 1, y + 1, visited, possibleWord, results);
+	if (!possibleWordNode->word.empty() && possibleWordNode->word.length() >= 3)
+	{
+		results.insert(possibleWordNode->word);
+	}
+
+	traverseMutex.unlock();
+
+	visited.insert(currentPos);
+
+	Traverse(x, y + 1, visited, possibleWordNode, results);
+	Traverse(x - 1, y + 1, visited, possibleWordNode, results);
+	Traverse(x - 1, y, visited, possibleWordNode, results);
+	Traverse(x - 1, y - 1, visited, possibleWordNode, results);
+	Traverse(x, y - 1, visited, possibleWordNode, results);
+	Traverse(x + 1, y - 1, visited, possibleWordNode, results);
+	Traverse(x + 1, y, visited, possibleWordNode, results);
+	Traverse(x + 1, y + 1, visited, possibleWordNode, results);
+
+	visited.erase(currentPos);
 }
 
-void GameBoard::Exec(std::deque< std::function<void()> > &jobs)
+void GameBoard::Exec(std::queue< std::function<void()> >& jobs)
 {
 	while (!jobs.empty())
 	{
 		jobs.front()();
-		jobs.pop_front();
+		jobs.pop();
 	}
 }
 
 void GameBoard::Solve()
 {
-	std::vector<std::thread> workers;
 	int processorCount = std::thread::hardware_concurrency();
 	std::unordered_set< std::string > results;
-	std::vector<std::deque<std::function<void()>>> threadJobPools(processorCount);
-
 
 	for (int y = 0; y < boardSize; y++)
 	{
+		std::vector<std::queue<std::function<void()>>> threadJobPools(processorCount);
+		std::vector<std::thread> workers;
+
 		for (int x = 0; x < boardSize; x++)
 		{
-			std::string possibleWord;
-            std::unordered_set<Coord> visited;
-			threadJobPools[(boardSize * y + x) % processorCount].emplace_back(std::bind(&GameBoard::Traverse, this, x, y, visited, possibleWord, std::ref(results)));
+			std::unordered_set<Coord> visited;
+			//Traverse(x, y, visited, prefixTree.root, results); //single threaded
+			threadJobPools[(boardSize * y + x) % processorCount].push(std::bind(&GameBoard::Traverse, this, x, y, visited, prefixTree.root, std::ref(results)));
 		}
-	}
 
-	for (auto &pool : threadJobPools)
-	{
-		if (!pool.empty())
+		for (auto& pool : threadJobPools)
 		{
-			workers.emplace_back(&GameBoard::Exec, this, std::ref(pool));
+			//std::cout << pool.size() << std::endl;
+			if (!pool.empty())
+			{
+				workers.emplace_back(&GameBoard::Exec, this, std::ref(pool));
+			}
 		}
-	}
 
-	for (auto &w : workers)
-	{
-		w.join();
+		for (auto& w : workers)
+		{
+			w.join();
+		}
 	}
 
 	PrintResultsAndScores(results);
+	
 }
 
-void GameBoard::PrintResultsAndScores(std::unordered_set< std::string > &results)
+void GameBoard::PrintResultsAndScores(std::unordered_set< std::string > &results) const
 {
 	int overallScore = 0;
 	int score = 0;
+	std::unordered_map<int, int> scoresTable{ {3, 1}, {4, 1}, {5, 2}, {6, 4}, {7, 5} };
 
 	std::cout << "\n\n************************************\nResults:" << std::endl;
 
-	for each (auto result in results)
+	for each (auto word in results)
 	{
-		score = GetWordsScore(result);
+		score = GetWordScore(word, scoresTable);
 		overallScore += score;
-		std::cout << result << GetIndent(result, longestWordLength) << score << std::endl;
+		std::cout << word << GetIndent(word, longestWordLength) << score << std::endl;
 	}
 
 	std::cout << "____________________________________" << std::endl;
 	std::cout << "Overallscore: " << overallScore << std::endl;
 	std::cout << "************************************" << std::endl;
+
+	results.clear();
 }
 
-int GameBoard::GetWordsScore(std::string &word)
+int GameBoard::GetWordScore(std::string &word, std::unordered_map<int, int> &scoresTable)
 {
-	int wordLength = word.length();
-
-	if (wordLength == 3 || wordLength == 4)
-	{
-		return 1;
-	}
-
-	if (wordLength == 5)
-	{
-		return 2;
-	}
-
-	if (wordLength == 6)
-	{
-		return 3;
-	}
-
-	if (wordLength == 7)
-	{
-		return 5;
-	}
-
-	if (wordLength > 8)
+	if (word.length() >= 8)
 	{
 		return 11;
 	}
+
+	if (scoresTable.find(word.length()) == scoresTable.end())
+	{
+		return 0;
+	}
+
+	return scoresTable[word.length()];
 }
 
 void GameBoard::ReadWordListFile(const std::string &wordListFilePath)
 {
- 	std::ifstream file(wordListFilePath);
+	std::ifstream file(wordListFilePath);
 	std::string word;
-    std::stringstream ss;
 
 	while (std::getline(file, word))
-	{	
-		words.insert(word);
+	{
+		if (word.size() > longestWordLength)
+		{
+			longestWordLength = word.size();
+		}
 
-        ss.str(std::string());
-        auto len = word.length();
-
-        if (len > longestWordLength)
-        {
-            longestWordLength = len;
-        }
-
-        for each (auto letter in word)
-        {
-            ss << letter;
-            wordParts.insert(ss.str());
-        }
+		prefixTree.Insert(word);
 	}
 }
 
 void GameBoard::Generate(const int &boardSize)
 {
-	grid.clear();
+	grid = new char*[boardSize];
 	this->boardSize = boardSize;
-    std::vector<char> tempVector;
-	
-    for (int y = 0; y < boardSize; y++)
-    {
-        for (int x = 0; x < boardSize; x++)
-        {
-            tempVector.push_back(static_cast<char>('a' + GetRandomIntWithinRange(0, 26)));
-        }
 
-        grid.push_back(tempVector);
-        tempVector.clear();
-    }
+	for (int y = 0; y < boardSize; y++)
+	{
+		grid[y] = new char[boardSize];
+		for (int x = 0; x < boardSize; x++)
+		{
+			grid[y][x] = 'a' + GetRandomIntWithinRange(0, 26);
+		}
+	}
 }
